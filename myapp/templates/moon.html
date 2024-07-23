@@ -1,0 +1,338 @@
+{% load static %}
+<!-- myapp/templates/myapp/moon.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive 3D Moon</title>
+    <style>
+        body { margin: 0; }
+        canvas { display: block; }
+
+        /* Add this CSS for the input box and button */
+        .overlay {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            color: white; /* Set the text color to white */
+            z-index: 2; /* Ensure the overlay is above the starfield */
+        }
+        
+        .overlay #daySlider {
+            width: 80%; /* Adjust the width percentage as needed */
+        }
+
+        .overlay label {
+            margin-bottom: 5px;
+            display: block;
+        }
+
+        .overlay input {
+            margin-bottom: 10px;
+        }
+
+        /* Add this CSS for the title */
+        .title {
+            position: absolute;
+            top: 50px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            font-size: 24px;
+            font-weight: bold;
+            text-align: center;
+            z-index: 2; /* Ensure the title is above the starfield */
+        }
+
+        .csv-data-container {
+            position: absolute;
+            top: 150px; /* Adjust as needed */
+            left: 1px; /* Adjust as needed */
+            width: 80%; /* Adjust as needed */
+            height: 300%; /* Adjust as needed */
+            overflow-y: auto; /* Enable vertical scrolling */
+            background-color: black; /* White background for container */
+            padding: 10px; /* Adjust as needed */
+            z-index: 2; /* Ensure it's above the starfield */
+        }
+
+        .csv-data {
+            max-height: 100%;
+        }
+    </style>
+</head>
+<body>
+    <!-- Add your title here -->
+    <div class="title">Seismic Activity on The Moon</div>
+
+    <!-- Add your input box and button here -->
+    <div class="overlay">
+        <label for="year">Year:</label>
+        <input type="text" id="year">
+        <label for="day">Day:</label>
+        <input type="range" id="daySlider" min="1" max="365" step="1">
+        <span id="currentDay">1</span> <!-- Add a span to display the current day -->
+        <button onclick="viewCSVData()">View Available Data</button>
+        <div class="csv-data-container" style="display: none;">
+            <!-- Display CSV data here -->
+            <div class="csv-data">
+                <pre id="csvContent"></pre>
+            </div>
+        </div>
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Include PapaParse library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+    <script>
+          // Ensure the DOM is loaded before running the script
+  window.onload = function() {
+    // Define the CSV file path
+    const csvFilePath = "{% static 'data/CombinedData.csv' %}";
+
+    // Fetch the CSV file
+    fetch(csvFilePath)
+      .then((response) => response.text())
+      .then((data) => {
+        // Parse the CSV data here
+        // For simplicity, let's just print the data for now
+        console.log(data);
+      })
+      .catch((error) => {
+        console.error("Error loading CSV:", error);
+      });
+  }
+        // Set up Three.js scene, camera, and renderer
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // Create a sphere geometry
+        const geometry = new THREE.SphereGeometry(5, 32, 32);
+
+        // Load the moon texture
+        const textureLoader = new THREE.TextureLoader();
+        const texture = textureLoader.load('{% static "myapp/lroc_color_poles_1k.jpg" %}');
+        const material = new THREE.MeshBasicMaterial({ map: texture });
+
+        // Create a mesh with the sphere geometry and moon texture
+        const sphere = new THREE.Mesh(geometry, material);
+        scene.add(sphere);
+
+        // Set the camera position
+        camera.position.z = 10;
+
+        // Create a starfield background
+        const starfieldTexture = textureLoader.load('{% static "myapp/starfield.jpg" %}');
+        scene.background = starfieldTexture;
+
+        
+
+        // Define an array to keep track of created markers
+        const markers = [];
+
+        const rotationSpeed = 0.005;
+        
+
+        // Function to create a marker at a given latitude, longitude
+        function createMarker(latitude, longitude) {
+        const phi = toRadians(90 - latitude);
+        const theta = toRadians(180 + longitude);
+
+        
+        const markerTexture = textureLoader.load("{% static 'myapp/pin2.png' %}");
+        const markerGeometry = new THREE.PlaneGeometry(1, 1); // Adjust the size as needed
+        const markerMaterial = new THREE.MeshBasicMaterial({ map: markerTexture, transparent: true, alphaTest: 0.5 });
+        const marker = new THREE.Mesh(markerGeometry, markerMaterial);
+        marker.userData.latitude = latitude;
+        marker.userData.longitude = longitude;
+        marker.position.setFromSphericalCoords(5, phi, theta);
+
+        scene.add(marker);
+        markers.push(marker);
+        }
+        // Function to clear existing markers
+        function clearMarkers() {
+            markers.forEach(marker => {
+                scene.remove(marker);
+            });
+            markers.length = 0; // Clear the markers array
+        }
+
+        function viewCSVData() {
+        const csvContentDiv = document.querySelector('.csv-data-container');
+        csvContentDiv.style.display = 'block'; // Display the data container
+
+        Papa.parse('{% static "data/CombinedData.csv" %}', {
+            download: true,
+            header: true,
+            complete: function (results) {
+                const csvData = results.data;
+
+                // Display the CSV data in the 'csvContent' element
+                const csvContentElement = document.getElementById('csvContent');
+                csvContentElement.textContent = JSON.stringify(csvData, null, 2);
+            }
+        });
+    }
+
+
+        // Identify the element you want to rotate along with the sphere
+        const elementToSync = document.querySelector('.sync-element');
+
+        // Function to sync the element's rotation with the sphere
+        function syncElementRotation(sphereRotationX, sphereRotationY, sphereRotationZ) {
+        // Calculate the opposite rotation for the element
+        const oppositeRotationX = -sphereRotationX;
+        const oppositeRotationY = -sphereRotationY;
+        const oppositeRotationZ = -sphereRotationZ;
+
+        // Apply the rotation to the element
+        elementToSync.style.transform = `
+            rotateX(${oppositeRotationX}rad)
+            rotateY(${oppositeRotationY}rad)
+            rotateZ(${oppositeRotationZ}rad)
+        `;
+        }
+
+        // Update the animate function to include marker position updates
+
+        const animate = function () {
+        requestAnimationFrame(animate);
+
+        // Rotate the moon sphere
+        sphere.rotation.x += rotationSpeed;
+        sphere.rotation.y += rotationSpeed;
+
+        // Rotate the markers
+        markers.forEach(marker => {
+            marker.rotation.x += rotationSpeed;
+            marker.rotation.y += rotationSpeed;
+        });
+
+        renderer.render(scene, camera);
+    };
+
+        function updateMarkerPositions() {
+        markers.forEach(marker => {
+            const latitude = marker.userData.latitude;
+            const longitude = marker.userData.longitude;
+
+            const phi = toRadians(90 - latitude);
+            const theta = toRadians(180 + longitude);
+
+            const markerPosition = new THREE.Vector3().setFromSphericalCoords(5, phi, theta);
+
+            // Apply moon's rotation to marker position
+            const moonRotationMatrix = new THREE.Matrix4().makeRotationFromEuler(sphere.rotation);
+            markerPosition.applyMatrix4(moonRotationMatrix);
+
+            marker.position.copy(markerPosition);
+        });
+    }
+        setInterval(updateMarkerPositions, 16);
+
+        // Handle window resize
+        window.addEventListener('resize', function () {
+            const newWidth = window.innerWidth;
+            const newHeight = window.innerHeight;
+
+            camera.aspect = newWidth / newHeight;
+            camera.updateProjectionMatrix();
+
+            renderer.setSize(newWidth, newHeight);
+        });
+
+        // Handle mouse interactions for rotating the sphere
+        let isDragging = false;
+        let previousMousePosition = {
+            x: 0,
+            y: 0
+        };
+
+        window.addEventListener('mousedown', (event) => {
+            isDragging = true;
+        });
+
+        window.addEventListener('mouseup', () => {
+            isDragging = false;
+            previousMousePosition = {
+                x: 0,
+                y: 0
+            };
+        });
+
+        window.addEventListener('mousemove', (event) => {
+            if (isDragging) {
+                const deltaMove = {
+                    x: event.clientX - previousMousePosition.x,
+                    y: event.clientY - previousMousePosition.y
+                };
+
+                const deltaRotationQuaternion = new THREE.Quaternion()
+                    .setFromEuler(new THREE.Euler(
+                        toRadians(deltaMove.y * 1),
+                        toRadians(deltaMove.x * 1),
+                        0,
+                        'XYZ'
+                    ));
+
+                sphere.quaternion.multiplyQuaternions(deltaRotationQuaternion, sphere.quaternion);
+            }
+
+            previousMousePosition = {
+                x: event.clientX,
+                y: event.clientY
+            };
+        });
+
+        // Helper function to convert degrees to radians
+        function toRadians(degrees) {
+            return degrees * (Math.PI / 180);
+        }
+
+        // Start the animation
+        animate();
+
+        // Add an event listener for the year input
+        document.getElementById('year').addEventListener('input', function(event) {
+            getData(); // Fetch data whenever the year input changes
+        });
+
+        // Add an event listener for the slider input
+        document.getElementById('daySlider').addEventListener('input', function(event) {
+            const currentDaySpan = document.getElementById('currentDay');
+            currentDaySpan.textContent = this.value; // Update the displayed day value
+            
+            // Fetch data when the slider stops moving (on 'change')
+            clearTimeout(this.timer);
+            this.timer = setTimeout(function() {
+                getData();
+            }, 300); // Adjust this timing as needed (in milliseconds)
+        });
+
+        // Modify the getData function to get data based on year and day values
+        function getData() {
+            // Get the user input value for year
+            const year = parseInt(document.getElementById('year').value);
+            
+            // Get the user input value for day from the slider
+            const day = parseInt(document.getElementById('daySlider').value);
+
+            // Load and parse the CSV file
+            Papa.parse('{% static "data/CombinedData.csv" %}', {
+                download: true,
+                header: true,
+                complete: function (results) {
+                    const csvData = results.data;
+                    const filteredData = csvData.filter(data => parseInt(data.Year) === year && parseInt(data.Day) === day);
+                    
+                    clearMarkers(); // Clear existing markers
+                    filteredData.forEach(event => createMarker(event.Lat, event.Long));
+                }
+            });
+}
+</script>
